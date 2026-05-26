@@ -89,7 +89,7 @@ function Copy-A11yDirectoryTree {
     # Use Copy-Item exclusively - robocopy adds complexity and CI-specific issues
     # Copy-Item is reliable and handles all edge cases in our CI environment
     $ExcludedNames = @('node_modules', '.git', '.git*', '__pycache__', '*.tmp', '*.bak')
-    
+
     foreach ($Item in Get-ChildItem -Path $SourceDir -Force) {
         if ($Item.Name -in $ExcludedNames) {
             continue
@@ -97,7 +97,8 @@ function Copy-A11yDirectoryTree {
 
         try {
             Copy-Item -Path $Item.FullName -Destination $DestinationDir -Recurse -Force -ErrorAction Stop
-        } catch {
+        }
+        catch {
             Write-Warning "Failed to copy $($Item.Name): $_"
             # Continue with other items instead of failing completely
         }
@@ -118,15 +119,15 @@ function Initialize-A11yOperationState {
 
     $BackupPath = Get-DefaultBackupPath -Operation $Operation -Root $Root
     $Snapshot = [ordered]@{
-        schemaVersion = '1.0'
-        timestampUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-        operation = $Operation
-        dryRun = [bool]$DryRun
-        check = [bool]$CheckMode
-        summaryPath = $SummaryPath
+        schemaVersion  = '1.0'
+        timestampUtc   = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        operation      = $Operation
+        dryRun         = [bool]$DryRun
+        check          = [bool]$CheckMode
+        summaryPath    = $SummaryPath
         candidatePaths = @($CandidatePaths | Where-Object { $_ } | Select-Object -Unique)
-        existingPaths = @($CandidatePaths | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique)
-        note = 'Metadata only. This file records touched paths for rollback planning; it is not a full file-content backup.'
+        existingPaths  = @($CandidatePaths | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique)
+        note           = 'Metadata only. This file records touched paths for rollback planning; it is not a full file-content backup.'
     }
     Write-A11ySummaryFile -Path $BackupPath -Data $Snapshot
     return $BackupPath
@@ -154,7 +155,8 @@ function Detect-InstalledTools {
     if ($NodeCmd) {
         $NodeVersion = (& node --version 2>$null) -replace '^v', ''
         $Tools.Node = @{ Available = $true; Version = $NodeVersion; Path = $NodeCmd.Source }
-    } else {
+    }
+    else {
         $Tools.Node = @{ Available = $false }
     }
 
@@ -171,7 +173,8 @@ function Detect-InstalledTools {
     if ($JavaCmd) {
         $JavaVersion = (& java -version 2>&1 | Select-Object -First 1) -replace '.*"(.+)".*', '$1'
         $Tools.Java = @{ Available = $true; Version = $JavaVersion }
-    } else {
+    }
+    else {
         $Tools.Java = @{ Available = $false }
     }
 
@@ -196,7 +199,7 @@ function Detect-InstalledTools {
     # VS Code profiles
     $Profiles = Get-VSCodeProfiles
     $Tools.VSCode = @{
-        Stable = ($Profiles | Where-Object { $_.Key -eq 'stable' -and $_.Exists }) -ne $null
+        Stable   = ($Profiles | Where-Object { $_.Key -eq 'stable' -and $_.Exists }) -ne $null
         Insiders = ($Profiles | Where-Object { $_.Key -eq 'insiders' -and $_.Exists }) -ne $null
     }
 
@@ -225,19 +228,20 @@ function Show-DetectedTools {
 
     Write-Host "  Detected tools:"
     $Found = @()
-    if ($Tools.VSCode.Stable)      { $Found += "VS Code" }
-    if ($Tools.VSCode.Insiders)    { $Found += "VS Code Insiders" }
-    if ($Tools.Node.Available)     { $Found += "Node.js" }
+    if ($Tools.VSCode.Stable) { $Found += "VS Code" }
+    if ($Tools.VSCode.Insiders) { $Found += "VS Code Insiders" }
+    if ($Tools.Node.Available) { $Found += "Node.js" }
     if ($Tools.ClaudeCode.Available) { $Found += "Claude Code" }
     if ($Tools.CopilotCli.Available) { $Found += "Copilot CLI" }
     if ($Tools.CodexCli.Available) { $Found += "Codex" }
     if ($Tools.GeminiCli.Available) { $Found += "Gemini CLI" }
-    if ($Tools.Python3.Available)  { $Found += "Python 3" }
-    if ($Tools.Java.Available)     { $Found += "Java" }
-    if ($Tools.VeraPdf.Available)  { $Found += "veraPDF" }
+    if ($Tools.Python3.Available) { $Found += "Python 3" }
+    if ($Tools.Java.Available) { $Found += "Java" }
+    if ($Tools.VeraPdf.Available) { $Found += "veraPDF" }
     if ($Found.Count -eq 0) {
         Write-Host "    (none detected)"
-    } else {
+    }
+    else {
         foreach ($Name in $Found) {
             Write-Host "    - $Name"
         }
@@ -256,54 +260,185 @@ function Get-RoleBasedPlatforms {
     switch ($Role) {
         'developer' {
             return @{
-                Claude = $Tools.ClaudeCode.Available
-                Copilot = $Tools.VSCode.Stable -or $Tools.VSCode.Insiders
+                Claude     = $Tools.ClaudeCode.Available
+                Copilot    = $Tools.VSCode.Stable -or $Tools.VSCode.Insiders
                 CopilotCli = $Tools.CopilotCli.Available
-                CodexCli = $Tools.CodexCli.Available
-                GeminiCli = $false
-                Mcp = $Tools.Node.Available
+                CodexCli   = $Tools.CodexCli.Available
+                GeminiCli  = $false
+                Mcp        = $Tools.Node.Available
             }
         }
         'reviewer' {
             return @{
-                Claude = $Tools.ClaudeCode.Available
-                Copilot = $Tools.VSCode.Stable -or $Tools.VSCode.Insiders
+                Claude     = $Tools.ClaudeCode.Available
+                Copilot    = $Tools.VSCode.Stable -or $Tools.VSCode.Insiders
                 CopilotCli = $false
-                CodexCli = $false
-                GeminiCli = $false
-                Mcp = $Tools.Node.Available
+                CodexCli   = $false
+                GeminiCli  = $false
+                Mcp        = $Tools.Node.Available
             }
         }
         'author' {
             return @{
-                Claude = $Tools.ClaudeCode.Available
-                Copilot = $false
+                Claude     = $Tools.ClaudeCode.Available
+                Copilot    = $false
                 CopilotCli = $false
-                CodexCli = $false
-                GeminiCli = $false
-                Mcp = $Tools.Node.Available
+                CodexCli   = $false
+                GeminiCli  = $false
+                Mcp        = $Tools.Node.Available
             }
         }
         'full' {
             return @{
-                Claude = $Tools.ClaudeCode.Available
-                Copilot = $Tools.VSCode.Stable -or $Tools.VSCode.Insiders
+                Claude     = $Tools.ClaudeCode.Available
+                Copilot    = $Tools.VSCode.Stable -or $Tools.VSCode.Insiders
                 CopilotCli = $Tools.CopilotCli.Available
-                CodexCli = $Tools.CodexCli.Available
-                GeminiCli = $Tools.GeminiCli.Available
-                Mcp = $Tools.Node.Available
+                CodexCli   = $Tools.CodexCli.Available
+                GeminiCli  = $Tools.GeminiCli.Available
+                Mcp        = $Tools.Node.Available
             }
         }
         default {
             # 'custom' - all false, caller handles individual toggles
             return @{
-                Claude = $false
-                Copilot = $false
+                Claude     = $false
+                Copilot    = $false
                 CopilotCli = $false
-                CodexCli = $false
-                GeminiCli = $false
-                Mcp = $false
+                CodexCli   = $false
+                GeminiCli  = $false
+                Mcp        = $false
             }
         }
     }
+}
+
+# ---------------------------------------------------------------------------
+# Merge-ConfigFile: append/update our section in a config markdown file.
+# Never overwrites existing user content. Uses <!-- a11y-agent-team --> markers
+# so the user's own content above/below our section is always preserved.
+# ---------------------------------------------------------------------------
+function Merge-ConfigFile {
+    param([string]$SrcFile, [string]$DstFile, [string]$Label)
+    $start = "<!-- a11y-agent-team: start -->"
+    $end = "<!-- a11y-agent-team: end -->"
+    $body = ([IO.File]::ReadAllText($SrcFile, [Text.Encoding]::UTF8)).TrimEnd()
+    $block = "$start`n$body`n$end"
+    if (-not (Test-Path $DstFile)) {
+        [IO.File]::WriteAllText($DstFile, "$block`n", [Text.Encoding]::UTF8)
+        Write-Host "    + $Label (created)"
+        return
+    }
+    $existing = [IO.File]::ReadAllText($DstFile, [Text.Encoding]::UTF8)
+    if ($existing -match [regex]::Escape($start)) {
+        $pattern = "(?s)" + [regex]::Escape($start) + ".*?" + [regex]::Escape($end)
+        $updated = [regex]::Replace($existing, $pattern, $block)
+        [IO.File]::WriteAllText($DstFile, $updated, [Text.Encoding]::UTF8)
+        Write-Host "    ~ $Label (updated our existing section)"
+    }
+    else {
+        [IO.File]::WriteAllText($DstFile, $existing.TrimEnd() + "`n`n$block`n", [Text.Encoding]::UTF8)
+        Write-Host "    + $Label (merged into your existing file)"
+    }
+}
+
+function Write-InstallSummaryFile {
+    param(
+        [string]$Path,
+        [hashtable]$Data
+    )
+    Write-A11ySummaryFile -Path $Path -Data $Data
+}
+
+function Configure-VSCodeMcpSettings {
+    param([string]$SettingsPath, [string]$Url)
+
+    $SettingsDir = Split-Path -Parent $SettingsPath
+    if (-not (Test-Path $SettingsDir)) {
+        New-Item -ItemType Directory -Force -Path $SettingsDir | Out-Null
+    }
+
+    $SettingsObject = [PSCustomObject]@{}
+    if (Test-Path $SettingsPath) {
+        try {
+            $Raw = Get-Content $SettingsPath -Raw
+            if (-not [string]::IsNullOrWhiteSpace($Raw)) {
+                $Parsed = $Raw | ConvertFrom-Json
+                if ($Parsed) {
+                    $SettingsObject = $Parsed
+                }
+            }
+        }
+        catch {
+            Write-Host "    ! Could not parse $SettingsPath"
+            Write-Host "      Add this manually later under mcp.servers.a11y-agent-team.url = $Url"
+            return
+        }
+    }
+
+    if ($SettingsObject.PSObject.Properties.Name -notcontains "mcp") {
+        $SettingsObject | Add-Member -NotePropertyName "mcp" -NotePropertyValue ([PSCustomObject]@{})
+    }
+
+    $McpSettings = $SettingsObject.mcp
+    if ($McpSettings.PSObject.Properties.Name -notcontains "servers") {
+        $McpSettings | Add-Member -NotePropertyName "servers" -NotePropertyValue ([PSCustomObject]@{})
+    }
+
+    $ServerSettings = $McpSettings.servers
+    if ($ServerSettings.PSObject.Properties.Name -notcontains "a11y-agent-team") {
+        $ServerSettings | Add-Member -NotePropertyName "a11y-agent-team" -NotePropertyValue ([PSCustomObject]@{})
+    }
+
+    $A11yServer = $ServerSettings.'a11y-agent-team'
+    if ($A11yServer.PSObject.Properties.Name -contains "url") {
+        $A11yServer.url = $Url
+    }
+    else {
+        $A11yServer | Add-Member -NotePropertyName "url" -NotePropertyValue $Url
+    }
+
+    $SettingsObject | ConvertTo-Json -Depth 20 | Set-Content $SettingsPath -Encoding UTF8
+    Write-Host "    + MCP server registered in $SettingsPath"
+}
+
+function Get-NodeMajorVersion {
+    $NodeCmd = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $NodeCmd) {
+        return $null
+    }
+
+    try {
+        return [int]$NodeCmd.Version.Major
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-JavaMajorVersion {
+    $JavaCmd = Get-Command java -ErrorAction SilentlyContinue
+    if (-not $JavaCmd) {
+        return $null
+    }
+
+    $javaVersionLine = ($JavaCmd).Version
+    $Major = $JavaVersionLine.Major
+    $minor = $JavaVersionLine.Minor
+
+    if ($Major -eq 1) {
+        # Java 8 and earlier use a "1.x" versioning scheme, so we need to check the minor version
+        if ($Minor -ge 8) {
+            return 8
+        }
+        else {
+            return $null
+        }
+    }
+    return $Major
+}
+
+function Refresh-ProcessPath {
+    $MachinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    $UserPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = ($MachinePath, $UserPath -join ";")
 }
