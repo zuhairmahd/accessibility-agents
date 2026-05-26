@@ -442,3 +442,117 @@ function Refresh-ProcessPath {
     $UserPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
     $env:Path = ($MachinePath, $UserPath -join ";")
 }
+
+function Add-FolderToPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 0)]
+        [string] $LiteralPath,
+        [ValidateSet('User', 'CurrentUser', 'Machine', 'LocalMachine')]
+        [string] $Scope
+    )
+    Set-StrictMode -Version 1
+    $success = $false
+    $isMachineLevel = $Scope -in 'Machine', 'LocalMachine'
+    if ($isMachineLevel -and -not $($ErrorActionPreference = 'Continue'; net session 2>$null)) {
+        Write-Host "! Insufficient permissions to update machine-level PATH. Run as administrator or choose user-level scope." -ForegroundColor Yellow
+        return $success
+    }
+    try {
+        $regPath = 'registry::' + ('HKEY_CURRENT_USER\Environment', 'HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Session Manager\Environment')[$isMachineLevel]
+        # Note the use of the .GetValue() method to ensure that the *unexpanded* value is returned.
+        $currDirs = (Get-Item -LiteralPath $regPath).GetValue('Path', '', 'DoNotExpandEnvironmentNames') -split ';' -ne ''
+        if ($LiteralPath -in $currDirs) {
+            Write-Verbose "Already present in the persistent $(('user', 'machine')[$isMachineLevel])-level Path: $LiteralPath"
+            $success = $true
+        }
+        $newValue = ($currDirs + $LiteralPath) -join ';'
+        # Update the registry.
+        Set-ItemProperty -Type ExpandString -LiteralPath $regPath Path $newValue
+        # Broadcast WM_SETTINGCHANGE to get the Windows shell to reload the
+        # updated environment, via a dummy [Environment]::SetEnvironmentVariable() operation.
+        $dummyName = [guid]::NewGuid().ToString()
+        [Environment]::SetEnvironmentVariable($dummyName, 'foo', 'User')
+        [Environment]::SetEnvironmentVariable($dummyName, [NullString]::value, 'User')
+        # Finally, also update the current session's `$env:Path` definition.
+        # Note: For simplicity, we always append to the in-process *composite* value,
+        #        even though for a -Scope Machine update this isn't strictly the same.
+        $env:Path = ($env:Path -replace ';$') + ';' + $LiteralPath
+        Write-Verbose "`"$LiteralPath`" successfully appended to the persistent $(('user', 'machine')[$isMachineLevel])-level Path and also the current-process value."
+        $success = $true
+    }
+    catch {
+        Write-Host "! Failed to add $LiteralPath to the $Scope PATH: $_" -ForegroundColor Red
+    }
+    return $success
+}
+
+function Install-VeraPDF {
+    [CmdletBinding()]
+    param(
+        [string]$configurationFile,
+        [string]$installerTempFolder = $null
+    )
+
+    $functionName = $MyInvocation.MyCommand.Name
+    $success = $false
+    $destinationFolderToAddToPath = "$env:programdata\verapdf"
+    Write-Verbose "[$functionName] Starting veraPDF installation with configuration file: $configurationFile and installer temp folder: $installerTempFolder"
+    $VeraPDFInstallerURL = "https://software.verapdf.org/releases/verapdf-installer.zip"
+    Write-Verbose "[$functionName] veraPDF installer URL: $VeraPDFInstallerURL"
+    $destination = if ($installerTempFolder) { "$installerTempFolder\verapdf-installer.zip" } else { "$env:TEMP\verapdf-installer.zip" }
+    Write-Verbose "[$functionName] Temporary download destination: $destination"
+    try {
+        Write-Host "Downloading verapdf installer from $VeraPDFInstallerURL to $destination"
+        $response = Invoke-WebRequest -Uri $VeraPDFInstallerURL -OutFile $destination -PassThru
+        Write-Verbose "[$functionName] Download response status code: $($response.StatusCode)"
+        if ($response.StatusCode -eq 200) {
+            Write-Host "veraPDF installer downloaded successfully to $destination"
+            # Extract the installer and run it
+            $extractPath = if ($installerTempFolder) { "$installerTempFolder\verapdf-installer" } else { "$env:TEMP\verapdf-installer" }
+            Write-Host "Extracting veraPDF installer to $extractPath"
+            Expand-Archive -Path $destination -DestinationPath $extractPath -Force
+            $installer = Get-ChildItem -Path $extractPath -Filter "verapdf-install" -File -Recurse | Select-Object -First 1
+            if (Test-Path $installer.FullName) {
+                $installerParrentDirectory = $installer.Directory.FullName
+                #copy the configuration file to the installer directory
+                Copy-Item -Path $configurationFile -Destination (Join-Path $installerParrentDirectory "auto-install.xml") -Force
+                Push-Location $installerParrentDirectory
+                Invoke-Expression -Command ".\verapdf-install .\auto-install.xml"
+                Write-Verbose "[$functionName] The exit code is $LASTEXITCODE"
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "veraPDF installer exited with code $LASTEXITCODE"
+                }
+                if (Add-FolderToPath -LiteralPath $destinationFolderToAddToPath -scope User) {
+                    Write-Host "veraPDF installed successfully to $destinationFolderToAddToPath."
+                    Write-Host "Added veraPDF installation folder to PATH successfully."
+                    Write-Host "You may need to restart your terminal or log out and back in for the changes to take effect."
+                    $success = $true
+                }
+                else {
+                    Write-Warning "Failed to add veraPDF installation folder to PATH."
+                }
+            }
+            else {
+                Write-Warning "Installer not found at expected location: $installer"
+            }
+        }
+        else {
+            Write-Warning "Failed to download veraPDF installer. Status code: $($response.StatusCode)"
+        }
+    }
+    catch {
+        Write-Warning "An error occurred while installing veraPDF: $_"
+    }
+    finally {
+        Pop-Location
+        if ($null -ne $destination -and (Test-Path $destination)) {
+            Remove-Item -Path $destination -Force
+        }
+        if ($null -ne $extractPath -and (Test-Path $extractPath)) {
+            Remove-Item -Path $extractPath -Recurse -Force
+        }
+    }
+    return $success
+}
+

@@ -1469,11 +1469,12 @@ if (Test-Path $McpServerSrc) {
 
             if ($ChocoCmd) {
                 Write-Host ""
-                if (Read-YesNo -Prompt 'Install veraPDF now with Chocolatey?' -DefaultYes:$false) {
+                if (Read-YesNo -Prompt 'Install veraPDF now?' -DefaultYes:$false) {
                     try {
-                        choco install verapdf -y 2>&1 | Out-Null
-                        if ($LASTEXITCODE -ne 0) { throw "choco install failed with exit code $LASTEXITCODE" }
-                        Write-Host "    + veraPDF install requested through Chocolatey"
+                        $configurationFile = Join-Path $ScriptDir "auto-install.xml"
+                        $veraInstall = Install-VeraPDF -configurationFile $configurationFile -installerTempFolder $ScriptDir
+                        if (-not $veraInstall) { throw "veraPDF install failed" }
+                        Write-Host "    + veraPDF install was successful"
                         Write-Host "    ! Restart your terminal or VS Code after install so verapdf is added to PATH"
                     }
                     catch {
