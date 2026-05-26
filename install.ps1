@@ -245,26 +245,20 @@ function Get-JavaMajorVersion {
         return $null
     }
 
-    try {
-        $JavaVersionLine = (& java -version 2>&1 | Select-Object -First 1)
-    }
-    catch {
-        return $null
-    }
+    $javaVersionLine = ($JavaCmd).Version
+    $Major = $JavaVersionLine.Major
+    $minor = $JavaVersionLine.Minor
 
-    if ($JavaVersionLine -match '"(?<major>\d+)(?:\.(?<minor>\d+))?') {
-        $Major = [int]$matches['major']
-        if ($Major -eq 1 -and $matches['minor']) {
-            return [int]$matches['minor']
+    if ($Major -eq 1) {
+        # Java 8 and earlier use a "1.x" versioning scheme, so we need to check the minor version
+        if ($Minor -ge 8) {
+            return 8
         }
-        return $Major
+        else {
+            return $null
+        }
     }
-
-    if ($JavaVersionLine -match '\b(?<major>\d+)\b') {
-        return [int]$matches['major']
-    }
-
-    return $null
+    return $Major
 }
 
 function Refresh-ProcessPath {
